@@ -169,6 +169,7 @@ protected:
     virtual bool allocateDoubleBuffer(void);
     virtual UInt32 scanForDrives(void);
     virtual IOReturn handleExecIO(void);
+    virtual bool busCanDispatch(void);
     virtual IOReturn handleRegAccess(void);
     virtual IOReturn handleBusReset(void);
     virtual IOReturn handleQueueFlush(void);
@@ -212,6 +213,8 @@ private:
     void completeFromHW(IOReturn forced, UInt32 tfd);
     void fetchTaskfile(IOATABusCommand *c, bool isError);
     bool pollDone(UInt32 timeoutMs);
+    static void freezeAction(OSObject *owner, void *a0, void *a1, void *a2, void *a3);
+    static void idleAction(OSObject *owner, void *a0, void *a1, void *a2, void *a3);
     static void sleepAction(OSObject *owner, void *a0, void *a1, void *a2, void *a3);
     static void wakeAction(OSObject *owner, void *a0, void *a1, void *a2, void *a3);
     void quiesceLocked();

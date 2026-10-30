@@ -158,30 +158,48 @@ void ASM106xAHCIPort::setReadOnly(bool ro) { _readOnly = ro; }
 void ASM106xAHCIPort::setInject(UInt32 what) { _inject = what; }
 
 /*
- * Sleep/wake.  Both run on the command gate so they are serialised with command dispatch and the interrupt path.
- * A command still in flight when we quiesce is aborted with kIOReturnOffline (its completion would never arrive: the
- * engine is stopped and the HBA is about to be reset); while _sleeping, handleExecIO() refuses new commands.
- * (An earlier version left the command pending; the resume callout's completeIO() then cancelled the only timer
- * that could have caught it and the I/O hung forever.)
+ * Sleep/wake.  All state changes run on the command gate so they are serialised with dispatch and the interrupt path.
+ *  1. freeze:  _sleeping = true -> busCanDispatch() is false, so newly queued commands simply wait in the queue.
+ *  2. drain:   wait (outside the gate, so the interrupt can run) for the in-flight command to complete normally.
+ *  3. stop:    only now stop the engine.  A command still stuck after the drain timeout is aborted (kIOReturnOffline).
+ *  4. wake:    HBA reset + link, then _sleeping = false and dispatchNext() releases everything that was held.
+ * (An earlier version aborted the in-flight command immediately; HFS+ treats such a failure as a lost journal write.
+ *  An even earlier one left it pending and the resume callout's completeIO() cancelled its timer: hung forever.)
  */
+void ASM106xAHCIPort::freezeAction(OSObject *owner, void *, void *, void *, void *) { ((ASM106xAHCIPort *)owner)->_sleeping = true; }
+void ASM106xAHCIPort::idleAction(OSObject *owner, void *res, void *, void *, void *)
+{
+    *(bool *)res = (((ASM106xAHCIPort *)owner)->_currentCommand == 0);
+}
 void ASM106xAHCIPort::sleepAction(OSObject *owner, void *, void *, void *, void *) { ((ASM106xAHCIPort *)owner)->quiesceLocked(); }
 void ASM106xAHCIPort::wakeAction(OSObject *owner, void *, void *, void *, void *) { ((ASM106xAHCIPort *)owner)->resumeLocked(); }
 
+bool ASM106xAHCIPort::busCanDispatch(void)
+{
+    return !_sleeping && super::busCanDispatch();
+}
+
 void ASM106xAHCIPort::quiesceForSleep()
 {
-    if (_cmdGate) _cmdGate->runAction((IOCommandGate::Action)&ASM106xAHCIPort::sleepAction, 0, 0, 0, 0);
-    else quiesceLocked();
+    if (!_cmdGate) { quiesceLocked(); return; }
+    _cmdGate->runAction((IOCommandGate::Action)&ASM106xAHCIPort::freezeAction, 0, 0, 0, 0);
+    bool idle = false;
+    for (int ms = 0; ms < 10000 && !idle; ms += 2) {
+        _cmdGate->runAction((IOCommandGate::Action)&ASM106xAHCIPort::idleAction, &idle, 0, 0, 0);
+        if (!idle) IOSleep(2);
+    }
+    _cmdGate->runAction((IOCommandGate::Action)&ASM106xAHCIPort::sleepAction, 0, 0, 0, 0);
 }
 
 void ASM106xAHCIPort::quiesceLocked()
 {
     _sleeping = true;
     wr(PORT_IRQ_MASK, 0);
-    stopEngine();                               /* the hardware abandons anything in flight */
+    stopEngine();
     if (_currentCommand) {
-        IOLog("ASM106x: port %u: aborting in-flight command %02x for sleep\n", (unsigned)_no, _currentCommand->getTaskFilePtr()->ataTFCommand);
+        IOLog("ASM106x: port %u: command %02x did not drain, aborting for sleep\n", (unsigned)_no, _currentCommand->getTaskFilePtr()->ataTFCommand);
         _currentCommand->state = kATAComplete;
-        completeIO(kIOReturnOffline);           /* also drains the queue: every queued command fails offline while _sleeping */
+        completeIO(kIOReturnOffline);
     }
     stopFisRx();
 }
@@ -212,6 +230,7 @@ void ASM106xAHCIPort::resumeLocked()
     _sleeping = false;
     IOLog("ASM106x: port %u: resume, link %s, SSTS %08x\n", (unsigned)_no, _linkUp ? "up" : "DOWN", (unsigned)rd(PORT_SCR_STAT));
     if (_linkUp) executeEventCallouts(kATAResetEvent, kATAInvalidDeviceID);   /* disk driver re-sends SET FEATURES etc. */
+    dispatchNext();                                                           /* release commands held during sleep */
 }
 
 void ASM106xAHCIPort::stopPort()
