@@ -4,14 +4,14 @@
 <dict>
     <key>CFBundleDevelopmentRegion</key><string>English</string>
     <key>CFBundleExecutable</key><string>ASM106xAHCI</string>
-    <key>CFBundleGetInfoString</key><string>ASM106xAHCI 0.1.0, ASMedia ASM106x AHCI SATA driver ported from Linux (GPL-2.0-or-later)</string>
+    <key>CFBundleGetInfoString</key><string>ASM106xAHCI 0.2.0, ASMedia ASM106x AHCI SATA driver ported from Linux (GPL-2.0-or-later)</string>
     <key>CFBundleIdentifier</key><string>com.sambushman.driver.ASM106xAHCI</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleName</key><string>ASM106xAHCI</string>
     <key>CFBundlePackageType</key><string>KEXT</string>
-    <key>CFBundleShortVersionString</key><string>0.1.0</string>
+    <key>CFBundleShortVersionString</key><string>0.2.0</string>
     <key>CFBundleSignature</key><string>????</string>
-    <key>CFBundleVersion</key><string>0.1.0</string>
+    <key>CFBundleVersion</key><string>0.2.0</string>
     <key>IOKitPersonalities</key>
     <dict>
         <key>ASM106xAHCI</key>
@@ -26,7 +26,7 @@
             </array>
             <key>IOProbeScore</key><integer>10000</integer>
             <key>PortMask</key><integer>3</integer>
-            <key>ReadOnly</key><true/>
+            <key>ReadOnly</key><false/>
         </dict>
     </dict>
     <key>OSBundleLibraries</key>
