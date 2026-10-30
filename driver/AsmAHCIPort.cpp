@@ -154,6 +154,8 @@ void ASM106xAHCIPort::recover(bool hard)
     if (_linkUp) startEngine();
 }
 
+void ASM106xAHCIPort::setReadOnly(bool ro) { _readOnly = ro; }
+
 void ASM106xAHCIPort::stopPort()
 {
     if (!_pm) return;

@@ -13,6 +13,7 @@
 #include <IOKit/IOInterruptEventSource.h>
 #include <IOKit/IOMemoryCursor.h>
 #include <IOKit/pci/IOPCIDevice.h>
+#include <IOKit/IOUserClient.h>
 #include <libkern/OSByteOrder.h>
 #include <IOKit/ata/IOATATypes.h>
 #include <IOKit/ata/IOATACommand.h>
@@ -118,6 +119,7 @@ public:
     virtual bool start(IOService *provider);
     virtual void stop(IOService *provider);
     virtual IOWorkLoop *getWorkLoop() const;
+    virtual IOReturn setProperties(OSObject *properties);   /* privileged runtime knobs: ReadOnly */
 
     inline UInt32 rd(UInt32 off) const { return OSReadLittleInt32((volatile void *)_mmio, off); }
     inline void   wr(UInt32 off, UInt32 v) const { OSWriteLittleInt32((volatile void *)_mmio, off, v); OSSynchronizeIO(); }
@@ -149,6 +151,7 @@ public:
     virtual void free();
     void serviceInterrupt();
     void stopPort();
+    void setReadOnly(bool ro);
 
     /* IOATAController overrides */
     virtual IOReturn provideBusInfo(IOATABusInfo *infoOut);

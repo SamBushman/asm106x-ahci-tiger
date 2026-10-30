@@ -9,6 +9,24 @@ OSDefineMetaClassAndStructors(ASM106xAHCI, IOService)
 
 IOWorkLoop *ASM106xAHCI::getWorkLoop() const { return _wl; }
 
+extern "C" task_t current_task(void);
+
+/* IORegistryEntrySetCFProperties() from a root process: {ReadOnly = true/false} switches write protection live */
+IOReturn ASM106xAHCI::setProperties(OSObject *properties)
+{
+    OSDictionary *d = OSDynamicCast(OSDictionary, properties);
+    if (!d) return kIOReturnBadArgument;
+    if (IOUserClient::clientHasPrivilege(current_task(), kIOClientPrivilegeAdministrator) != kIOReturnSuccess)
+        return kIOReturnNotPrivileged;
+    OSBoolean *ro = OSDynamicCast(OSBoolean, d->getObject("ReadOnly"));
+    if (ro) {
+        for (int i = 0; i < 32; i++) if (_ports[i]) _ports[i]->setReadOnly(ro == kOSBooleanTrue);
+        setProperty("ReadOnly", ro);
+        IOLog("ASM106x: ReadOnly is now %s\n", ro == kOSBooleanTrue ? "ON (writes refused)" : "OFF (writes allowed)");
+    }
+    return kIOReturnSuccess;
+}
+
 bool ASM106xAHCI::resetHBA()
 {
     UInt32 tmp;
