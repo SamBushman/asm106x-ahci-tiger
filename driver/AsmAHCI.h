@@ -138,6 +138,8 @@ private:
     bool                    _asleep;
 
     bool resetHBA();
+    void doSleep();
+    void doWake();
     static void interruptAction(OSObject *owner, IOInterruptEventSource *src, int count);
     void handleInterrupt();
 };
@@ -155,7 +157,7 @@ public:
     void stopPort();
     void setReadOnly(bool ro);
     void setInject(UInt32 what);               /* 1 = bad LBA on next read (device error), 2 = swallow next command (timeout) */
-    void quiesceForSleep();
+    void quiesceForSleep();                    /* both serialise on the command gate */
     bool resumeFromSleep();
 
     /* IOATAController overrides */
@@ -186,6 +188,7 @@ private:
     IONaturalMemoryCursor *_cursor;
     bool            _linkUp;
     UInt32          _inject;
+    bool            _sleeping;           /* refuse commands between quiesceForSleep() and resumeFromSleep() */
     bool            _readOnly;           /* bring-up safety: refuse data-out ATA commands */
     UInt32          _sig;
     UInt8           _lastD2H[20];        /* copy of the last D2H register FIS */
@@ -209,7 +212,10 @@ private:
     void completeFromHW(IOReturn forced, UInt32 tfd);
     void fetchTaskfile(IOATABusCommand *c, bool isError);
     bool pollDone(UInt32 timeoutMs);
-    static void resumeCalloutAction(OSObject *owner, void *a0, void *a1, void *a2, void *a3);
+    static void sleepAction(OSObject *owner, void *a0, void *a1, void *a2, void *a3);
+    static void wakeAction(OSObject *owner, void *a0, void *a1, void *a2, void *a3);
+    void quiesceLocked();
+    void resumeLocked();
 };
 
 #endif

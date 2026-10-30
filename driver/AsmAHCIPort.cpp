@@ -157,21 +157,44 @@ void ASM106xAHCIPort::recover(bool hard)
 void ASM106xAHCIPort::setReadOnly(bool ro) { _readOnly = ro; }
 void ASM106xAHCIPort::setInject(UInt32 what) { _inject = what; }
 
+/*
+ * Sleep/wake.  Both run on the command gate so they are serialised with command dispatch and the interrupt path.
+ * A command still in flight when we quiesce is aborted with kIOReturnOffline (its completion would never arrive: the
+ * engine is stopped and the HBA is about to be reset); while _sleeping, handleExecIO() refuses new commands.
+ * (An earlier version left the command pending; the resume callout's completeIO() then cancelled the only timer
+ * that could have caught it and the I/O hung forever.)
+ */
+void ASM106xAHCIPort::sleepAction(OSObject *owner, void *, void *, void *, void *) { ((ASM106xAHCIPort *)owner)->quiesceLocked(); }
+void ASM106xAHCIPort::wakeAction(OSObject *owner, void *, void *, void *, void *) { ((ASM106xAHCIPort *)owner)->resumeLocked(); }
+
 void ASM106xAHCIPort::quiesceForSleep()
 {
+    if (_cmdGate) _cmdGate->runAction((IOCommandGate::Action)&ASM106xAHCIPort::sleepAction, 0, 0, 0, 0);
+    else quiesceLocked();
+}
+
+void ASM106xAHCIPort::quiesceLocked()
+{
+    _sleeping = true;
     wr(PORT_IRQ_MASK, 0);
-    stopEngine();
+    stopEngine();                               /* the hardware abandons anything in flight */
+    if (_currentCommand) {
+        IOLog("ASM106x: port %u: aborting in-flight command %02x for sleep\n", (unsigned)_no, _currentCommand->getTaskFilePtr()->ataTFCommand);
+        _currentCommand->state = kATAComplete;
+        completeIO(kIOReturnOffline);           /* also drains the queue: every queued command fails offline while _sleeping */
+    }
     stopFisRx();
 }
 
-void ASM106xAHCIPort::resumeCalloutAction(OSObject *owner, void *, void *, void *, void *)
+bool ASM106xAHCIPort::resumeFromSleep()
 {
-    ASM106xAHCIPort *self = (ASM106xAHCIPort *)owner;
-    self->executeEventCallouts(kATAResetEvent, kATAInvalidDeviceID);   /* disk driver re-sends SET FEATURES etc. */
+    if (_cmdGate) _cmdGate->runAction((IOCommandGate::Action)&ASM106xAHCIPort::wakeAction, 0, 0, 0, 0);
+    else resumeLocked();
+    return _linkUp;
 }
 
 /* ahci_port_resume: after the HBA reset the port registers are back at defaults */
-bool ASM106xAHCIPort::resumeFromSleep()
+void ASM106xAHCIPort::resumeLocked()
 {
     wr(PORT_IRQ_MASK, 0);
     stopEngine();
@@ -186,9 +209,9 @@ bool ASM106xAHCIPort::resumeFromSleep()
     if (_linkUp) startEngine();
     wr(PORT_IRQ_STAT, rd(PORT_IRQ_STAT));
     wr(PORT_IRQ_MASK, DEF_PORT_IRQ);
+    _sleeping = false;
     IOLog("ASM106x: port %u: resume, link %s, SSTS %08x\n", (unsigned)_no, _linkUp ? "up" : "DOWN", (unsigned)rd(PORT_SCR_STAT));
-    if (_linkUp && _cmdGate) _cmdGate->runAction((IOCommandGate::Action)&ASM106xAHCIPort::resumeCalloutAction, 0, 0, 0, 0);
-    return _linkUp;
+    if (_linkUp) executeEventCallouts(kATAResetEvent, kATAInvalidDeviceID);   /* disk driver re-sends SET FEATURES etc. */
 }
 
 void ASM106xAHCIPort::stopPort()
@@ -390,7 +413,7 @@ IOReturn ASM106xAHCIPort::issueCurrent()
 IOReturn ASM106xAHCIPort::handleExecIO(void)
 {
     IOATABusCommand *c = _currentCommand;
-    if (!_linkUp) {
+    if (!_linkUp || _sleeping) {
         c->state = kATAComplete;
         completeIO(kIOReturnOffline);
         return kIOReturnOffline;
