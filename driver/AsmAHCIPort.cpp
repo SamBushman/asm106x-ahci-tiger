@@ -155,6 +155,41 @@ void ASM106xAHCIPort::recover(bool hard)
 }
 
 void ASM106xAHCIPort::setReadOnly(bool ro) { _readOnly = ro; }
+void ASM106xAHCIPort::setInject(UInt32 what) { _inject = what; }
+
+void ASM106xAHCIPort::quiesceForSleep()
+{
+    wr(PORT_IRQ_MASK, 0);
+    stopEngine();
+    stopFisRx();
+}
+
+void ASM106xAHCIPort::resumeCalloutAction(OSObject *owner, void *, void *, void *, void *)
+{
+    ASM106xAHCIPort *self = (ASM106xAHCIPort *)owner;
+    self->executeEventCallouts(kATAResetEvent, kATAInvalidDeviceID);   /* disk driver re-sends SET FEATURES etc. */
+}
+
+/* ahci_port_resume: after the HBA reset the port registers are back at defaults */
+bool ASM106xAHCIPort::resumeFromSleep()
+{
+    wr(PORT_IRQ_MASK, 0);
+    stopEngine();
+    stopFisRx();
+    wr(PORT_IRQ_STAT, rd(PORT_IRQ_STAT));
+    wr(PORT_SCR_ERR, rd(PORT_SCR_ERR));
+    UInt32 cmd = rd(PORT_CMD) & ~(0xfu << 28);
+    if (_hba->capabilities() & CAP_SSS) cmd |= PORT_CMD_SPIN_UP;
+    wr(PORT_CMD, cmd | PORT_CMD_ICC_ACTIVE);
+    startFisRx();
+    _linkUp = comReset();
+    if (_linkUp) startEngine();
+    wr(PORT_IRQ_STAT, rd(PORT_IRQ_STAT));
+    wr(PORT_IRQ_MASK, DEF_PORT_IRQ);
+    IOLog("ASM106x: port %u: resume, link %s, SSTS %08x\n", (unsigned)_no, _linkUp ? "up" : "DOWN", (unsigned)rd(PORT_SCR_STAT));
+    if (_linkUp && _cmdGate) _cmdGate->runAction((IOCommandGate::Action)&ASM106xAHCIPort::resumeCalloutAction, 0, 0, 0, 0);
+    return _linkUp;
+}
 
 void ASM106xAHCIPort::stopPort()
 {
@@ -294,6 +329,16 @@ IOReturn ASM106xAHCIPort::issueCurrent()
         fis[12] = tf->ataTFCount;
     }
 
+    UInt32 inject = 0;
+    if (_inject && !(flags & mATAFlagIOWrite) && !(flags & mATAFlagProtocolATAPI) && c->getByteCount() >= 512) {
+        inject = _inject; _inject = 0;
+        if (inject == 1) {                      /* LBA = 2^48-1: far beyond capacity -> device answers IDNF */
+            fis[4] = fis[5] = fis[6] = 0xff;
+            if (flags & mATAFlag48BitLBA) fis[8] = fis[9] = fis[10] = 0xff;
+            fis[7] |= 0x4f;
+        }
+        IOLog("ASM106x: port %u: INJECT %s into command %02x\n", (unsigned)_no, inject == 1 ? "bad-LBA" : "swallow", fis[2]);
+    }
     UInt32 hdr0 = 5;                            /* CFL: 5 dwords */
     if (flags & mATAFlagIOWrite) hdr0 |= 1u << 6;   /* W */
     if ((flags & mATAFlagProtocolATAPI) && c->getPacketSize() > 0) {
@@ -336,6 +381,7 @@ IOReturn ASM106xAHCIPort::issueCurrent()
     dmaSync();
 
     wr(PORT_SCR_ERR, rd(PORT_SCR_ERR));
+    if (inject == 2) return kATANoErr;          /* never reaches the hardware: the command timer must catch it */
     wr(PORT_CMD_ISSUE, 1);
     (void)rd(PORT_CMD_ISSUE);
     return kATANoErr;

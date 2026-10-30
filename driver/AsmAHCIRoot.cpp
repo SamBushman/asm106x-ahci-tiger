@@ -24,6 +24,12 @@ IOReturn ASM106xAHCI::setProperties(OSObject *properties)
         setProperty("ReadOnly", ro);
         IOLog("ASM106x: ReadOnly is now %s\n", ro == kOSBooleanTrue ? "ON (writes refused)" : "OFF (writes allowed)");
     }
+    OSString *inj = OSDynamicCast(OSString, d->getObject("Inject"));
+    if (inj) {
+        UInt32 what = inj->isEqualTo("idnf") ? 1 : inj->isEqualTo("timeout") ? 2 : 0;
+        for (int i = 0; i < 32; i++) if (_ports[i]) _ports[i]->setInject(what);
+        IOLog("ASM106x: fault injection armed: %s\n", what == 1 ? "bad LBA on next read" : what == 2 ? "swallow next command" : "none");
+    }
     return kIOReturnSuccess;
 }
 
@@ -123,6 +129,15 @@ bool ASM106xAHCI::start(IOService *provider)
         found++;
     }
     IOLog("ASM106x: %d port(s) started\n", found);
+    {
+        static IOPMPowerState pmStates[2] = {
+            { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            { 1, IOPMDeviceUsable, IOPMPowerOn, IOPMPowerOn, 0, 0, 0, 0, 0, 0, 0, 0 }
+        };
+        PMinit();
+        _pci->joinPMtree(this);
+        registerPowerDriver(this, pmStates, 2);
+    }
     registerService();
     return true;                                /* stay loaded so a later rescan/hotplug feature has a home */
 }
@@ -147,4 +162,25 @@ void ASM106xAHCI::handleInterrupt()
     for (UInt32 p = 0; p < 32; p++)
         if ((is & (1u << p)) && _ports[p]) _ports[p]->serviceInterrupt();
     wr(HOST_IRQ_STAT, is);                      /* after the per-port status has been cleared */
+}
+
+/* System sleep: stop the engines; wake: the card may have lost power, so redo the HBA reset and re-link every port. */
+IOReturn ASM106xAHCI::setPowerState(unsigned long state, IOService *)
+{
+    if (!_mmio) return IOPMAckImplied;
+    if (state == 0 && !_asleep) {
+        _asleep = true;
+        for (int i = 0; i < 32; i++) if (_ports[i]) _ports[i]->quiesceForSleep();
+        wr(HOST_CTL, rd(HOST_CTL) & ~HOST_IRQ_EN);
+        IOLog("ASM106x: sleeping\n");
+    } else if (state == 1 && _asleep) {
+        _asleep = false;
+        IOLog("ASM106x: waking, GHC %08x\n", (unsigned)rd(HOST_CTL));
+        if (!resetHBA()) { IOLog("ASM106x: HBA reset failed on wake\n"); return IOPMAckImplied; }
+        wr(HOST_IRQ_STAT, rd(HOST_IRQ_STAT));
+        wr(HOST_CTL, rd(HOST_CTL) | HOST_IRQ_EN);
+        for (int i = 0; i < 32; i++) if (_ports[i]) _ports[i]->resumeFromSleep();
+        IOLog("ASM106x: wake complete\n");
+    }
+    return IOPMAckImplied;
 }

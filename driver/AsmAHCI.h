@@ -119,7 +119,8 @@ public:
     virtual bool start(IOService *provider);
     virtual void stop(IOService *provider);
     virtual IOWorkLoop *getWorkLoop() const;
-    virtual IOReturn setProperties(OSObject *properties);   /* privileged runtime knobs: ReadOnly */
+    virtual IOReturn setProperties(OSObject *properties);   /* privileged runtime knobs: ReadOnly, Inject */
+    virtual IOReturn setPowerState(unsigned long powerStateOrdinal, IOService *whatDevice);
 
     inline UInt32 rd(UInt32 off) const { return OSReadLittleInt32((volatile void *)_mmio, off); }
     inline void   wr(UInt32 off, UInt32 v) const { OSWriteLittleInt32((volatile void *)_mmio, off, v); OSSynchronizeIO(); }
@@ -134,6 +135,7 @@ private:
     IOInterruptEventSource *_irq;
     UInt32                  _cap, _portMap;
     ASM106xAHCIPort        *_ports[32];
+    bool                    _asleep;
 
     bool resetHBA();
     static void interruptAction(OSObject *owner, IOInterruptEventSource *src, int count);
@@ -152,6 +154,9 @@ public:
     void serviceInterrupt();
     void stopPort();
     void setReadOnly(bool ro);
+    void setInject(UInt32 what);               /* 1 = bad LBA on next read (device error), 2 = swallow next command (timeout) */
+    void quiesceForSleep();
+    bool resumeFromSleep();
 
     /* IOATAController overrides */
     virtual IOReturn provideBusInfo(IOATABusInfo *infoOut);
@@ -180,6 +185,7 @@ private:
     IOPhysicalAddress _dmaPhys;
     IONaturalMemoryCursor *_cursor;
     bool            _linkUp;
+    UInt32          _inject;
     bool            _readOnly;           /* bring-up safety: refuse data-out ATA commands */
     UInt32          _sig;
     UInt8           _lastD2H[20];        /* copy of the last D2H register FIS */
@@ -203,6 +209,7 @@ private:
     void completeFromHW(IOReturn forced, UInt32 tfd);
     void fetchTaskfile(IOATABusCommand *c, bool isError);
     bool pollDone(UInt32 timeoutMs);
+    static void resumeCalloutAction(OSObject *owner, void *a0, void *a1, void *a2, void *a3);
 };
 
 #endif
