@@ -30,15 +30,18 @@ callback is exercised through `asmctl sleep|wake`, which runs the identical code
 ## Install
 
 ```sh
-sudo cp -R ASM106xAHCI.kext /Library/Extensions/
-sudo chown -R root:wheel /Library/Extensions/ASM106xAHCI.kext
-sudo chmod -R go-w /Library/Extensions/ASM106xAHCI.kext
-sudo touch /Library/Extensions       # make kextd rescan; reboot, or: sudo kextload /Library/Extensions/ASM106xAHCI.kext
+sudo cp -R ASM106xAHCI.kext /System/Library/Extensions/
+sudo chown -R root:wheel /System/Library/Extensions/ASM106xAHCI.kext
+sudo chmod -R go-w /System/Library/Extensions/ASM106xAHCI.kext
+sudo touch /System/Library/Extensions     # then reboot (kextd rebuilds its caches); or: sudo kextload <path>
 ```
 
-The kext deliberately has no `OSBundleRequired`, so it is **not** in the boot kernel cache; `kextd` loads it after
-boot when it sees the card. To remove it (e.g. from single-user mode or another OS): delete
-`/Library/Extensions/ASM106xAHCI.kext`.
+`/Library/Extensions` does **not** work on Tiger: `kextd(8)` states that by default it only uses kexts in
+`/System/Library/Extensions`, so a kext placed in `/Library/Extensions` is never matched or loaded.
+
+The kext deliberately has no `OSBundleRequired`, so it is **not** part of the boot-critical set; `kextd` loads it
+after boot when it sees the card (about a minute after power-on on the test machine). To remove it (e.g. from
+single-user mode or another OS): delete `/System/Library/Extensions/ASM106xAHCI.kext` and `touch` the folder.
 
 ## Build (on a Tiger PPC machine, Apple gcc 4.0.1)
 
