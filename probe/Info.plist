@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key><string>English</string>
+    <key>CFBundleExecutable</key><string>ASM106xProbe</string>
+    <key>CFBundleIdentifier</key><string>com.sambushman.ASM106xProbe</string>
+    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+    <key>CFBundleName</key><string>ASM106xProbe</string>
+    <key>CFBundlePackageType</key><string>KEXT</string>
+    <key>CFBundleShortVersionString</key><string>1.0.0</string>
+    <key>CFBundleSignature</key><string>????</string>
+    <key>CFBundleVersion</key><string>1.0.0</string>
+    <key>IOKitPersonalities</key>
+    <dict>
+        <key>ASM106xProbe</key>
+        <dict>
+            <key>CFBundleIdentifier</key><string>com.sambushman.ASM106xProbe</string>
+            <key>IOClass</key><string>ASM106xProbe</string>
+            <key>IOProviderClass</key><string>IOPCIDevice</string>
+            <key>IONameMatch</key>
+            <array><string>pci1b21,625</string></array>
+            <key>IOProbeScore</key><integer>1000</integer>
+        </dict>
+    </dict>
+    <key>OSBundleLibraries</key>
+    <dict>
+        <key>com.apple.iokit.IOPCIFamily</key><string>1.0b1</string>
+        <key>com.apple.kernel.iokit</key><string>1.0.0b1</string>
+        <key>com.apple.kernel.libkern</key><string>1.0.0b1</string>
+    </dict>
+</dict>
+</plist>
