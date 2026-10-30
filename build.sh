@@ -3,7 +3,7 @@
 # Recipe copied from atiradeonx1000-kext-source/Tools/issue147_probe/build.sh (proven on this machine).
 set -e
 SRC=$(cd "$1" && pwd); NAME=$2
-OUT=${OUT:-$HOME/rung3/asm1062/build}/$NAME
+OUT=${OUT:-$HOME/asm1062-kext/out}/$NAME
 KFW=/System/Library/Frameworks/Kernel.framework/Headers
 GCCLIB=/usr/lib/gcc/powerpc-apple-darwin8/4.0.1
 COMMON="-arch ppc -static -fno-common -mlongcall -DKERNEL -DKERNEL_PRIVATE -DDRIVER_PRIVATE -I$KFW -I$SRC ${OPT--Os} ${WARN--Wall -Wno-unused}"
